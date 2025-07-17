@@ -1,0 +1,29 @@
+name: OBS WebSocket Control (Node.js)
+
+on:
+  workflow_dispatch:  # Manual trigger
+  schedule:
+    - cron: '0 20 * * *'  # Daily at 8 PM (adjust as needed)
+
+jobs:
+  control-obs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies (pnpm)
+        run: pnpm install obs-websocket-js
+
+      - name: Run OBS WebSocket control script
+        run: node obs-control.js
+        env:
+          OBS_WS_HOST: "localhost"  # or your OBS server IP
+          OBS_WS_PORT: "4455"
+          OBS_WS_PASSWORD: ${{ secrets.OBS_WEBSOCKET_PASSWORD }}
