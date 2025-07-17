@@ -1,0 +1,17 @@
+{
+  "name": "obs-websocket",
+  "version": "1.0.0",
+  "description": "OBS Livestreaming WS GA",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "@types/node": "^24.0.14"
+  },
+  "dependencies": {
+    "obs-websocket-js": "^5.0.6"
+  }
+}

@@ -1,29 +1,55 @@
-name: OBS WebSocket Control (Node.js)
-
+name: Playwright OBS Tests
 on:
-  workflow_dispatch:  # Manual trigger
-  schedule:
-    - cron: '0 20 * * *'  # Daily at 8 PM (adjust as needed)
+  workflow_dispatch:
+    inputs:
+      with_obs:
+        description: 'Run with OBS WebSocket?'
+        type: boolean
+        required: true
+        default: true
+      obs_password:
+        description: 'OBS WebSocket Password'
+        type: string
+        required: false
+        default: 'yourpassword'
 
 jobs:
-  control-obs:
+  test:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install dependencies (pnpm)
-        run: pnpm install obs-websocket-js
-
-      - name: Run OBS WebSocket control script
-        run: node obs-control.js
-        env:
-          OBS_WS_HOST: "localhost"  # or your OBS server IP
-          OBS_WS_PORT: "4455"
-          OBS_WS_PASSWORD: ${{ secrets.OBS_WEBSOCKET_PASSWORD }}
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    
+    # Start OBS conditionally
+    - name: Start OBS WebSocket
+      if: ${{ inputs.with_obs }}
+      run: |
+        docker run -d \
+          -p 4455:4455 \
+          -e OBS_WS_PASSWORD=${{ inputs.obs_password }} \
+          --name obs \
+          ghcr.io/obsproject/obs-studio:latest \
+          /bin/bash -c "
+          /usr/bin/obs --startvirtualcam --minimize-to-tray &
+          sleep 15 &&
+          /usr/bin/obs-websocket/obs-websocket-linux --port 4455 --password $OBS_WS_PASSWORD
+          "
+    
+    - name: Install dependencies
+      run: npm ci
+    - name: Install Playwright
+      run: npx playwright install
+    - name: Run tests
+      env:
+        OBS_ENABLED: ${{ inputs.with_obs }}
+        OBS_WS_URL: "ws://localhost:4455"
+        OBS_WS_PASSWORD: ${{ inputs.obs_password }}
+      run: npx playwright test
+    
+    # Cleanup OBS container
+    - name: Stop OBS
+      if: ${{ inputs.with_obs }}
+      run: docker stop obs || true
