@@ -1,60 +1,77 @@
-name: OBS Livestream Control
+name: End to end tests with OBS
+
+env:
+  NODE_OPTIONS: --max-http-header-size=4096
 
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: "Start or Stop the livestream"
+      obs-enabled:
+        description: "Enable OBS WebSocket?"
         required: true
-        default: "start"
-        type: choice
-        options:
-          - start
-          - stop
+        default: false
+        type: boolean
+
+permissions:
+  actions: write
+  checks: write
+  contents: write
+  deployments: write
+  discussions: write
+  issues: write
+  id-token: write
+  packages: write
+  pages: write
+  pull-requests: write
+  repository-projects: write
+  security-events: write
+  statuses: write
 
 jobs:
-  obs-control:
-    runs-on: self-hosted
-
+  install:
+    name: 📦 Install Packages
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          python-version: '3.x'
+          version: 10
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15"
+          cache: "pnpm"
 
-      - name: Install obs-websocket-py
-        run: pip install obs-websocket-py
+  setup-obs:
+    name: Setup OBS WebSocket
+    needs: [install]
+    if: ${{ github.event.inputs.obs-enabled == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      obs-password: ${{ steps.obs-password.outputs.password }}
+    steps:
+      - name: Generate random password for obs (not config)
+        id: obs-password
+        run: echo "password=$(openssl rand -hex 12)" >> $GITHUB_OUTPUT
 
-      - name: Control OBS
-        env:
-          OBS_HOST: 'localhost'
-          OBS_PORT: '4455'
-          OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
-          ACTION: ${{ github.event.inputs.action }}
+      - name: Install OBS Studio and WS
         run: |
-          python3 <<EOF
-          from obswebsocket import obsws, requests
-          import os
+          sudo apt-get update
+          sudo apt-get install -y obs-studio obs-websocket
 
-          host = os.environ.get('OBS_HOST')
-          port = int(os.environ.get('OBS_PORT'))
-          password = os.environ.get('OBS_PASSWORD')
-          action = os.environ.get('ACTION')
+      - name: Configure OBS WebSocket
+        run: |
+          mkdir -p ~/.config/obs-studio/plugin_config/obs-websocket
+          echo '{
+            "enabled": true,
+            "serverPort": 4455,
+            "serverPassword": "${{ steps.obs-password.outputs.password }}",
+            "authenticationRequired": true
+          }' > ~/.config/obs-studio/plugin_config/obs-websocket/obsWebSocket.json
 
-          ws = obsws(host, port, password)
-          ws.connect()
-
-          if action == "start":
-              print("Starting stream...")
-              ws.call(requests.StartStream())
-          elif action == "stop":
-              print("Stopping stream...")
-              ws.call(requests.StopStream())
-          else:
-              raise ValueError("Invalid action: " + action)
-
-          ws.disconnect()
-          EOF
+      - name: Start OBS in background
+        run: |
+          obs --startvirtualcam --minimize-to-tray &
+          echo $! > obs.pid 
+          sleep 50
